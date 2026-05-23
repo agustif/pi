@@ -43,6 +43,7 @@ describe("hydrateOpenAICodexModels", () => {
 						{
 							slug: "codex-auto-review",
 							display_name: "Codex Auto Review",
+							supported_in_api: true,
 							visibility: "hide",
 						},
 					],
@@ -102,6 +103,7 @@ describe("hydrateOpenAICodexModels", () => {
 			"gpt-5.5",
 			"gpt-5.4-mini",
 			"gpt-5.4",
+			"codex-auto-review",
 		]);
 		expect(hydrated.find((model) => model.provider === "openai-codex" && model.id === "gpt-5.5")?.maxTokens).toBe(
 			128000,

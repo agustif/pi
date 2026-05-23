@@ -65,9 +65,11 @@ type OpenAICodexCatalogModel = {
 	max_context_window?: number;
 	input_modalities?: string[];
 	supported_reasoning_levels?: Array<{ effort?: string }>;
+	supported_in_api?: boolean;
 	visibility?: string;
 };
 
+const FIRST_CLASS_HIDDEN_OPENAI_CODEX_MODELS = new Set(["codex-auto-review"]);
 const openAICodexModelsCache = new Map<string, { expiresAt: number; models: OpenAICodexCatalogModel[] }>();
 
 function createState(): string {
@@ -338,6 +340,17 @@ function normalizeOpenAICodexReasoning(model: OpenAICodexCatalogModel, fallback:
 	return model.supported_reasoning_levels.some((level) => typeof level?.effort === "string" && level.effort.length > 0);
 }
 
+function shouldHydrateOpenAICodexModel(model: OpenAICodexCatalogModel): boolean {
+	const id = model.slug?.trim();
+	if (!id) {
+		return false;
+	}
+	if (model.visibility !== "hide") {
+		return true;
+	}
+	return FIRST_CLASS_HIDDEN_OPENAI_CODEX_MODELS.has(id) && model.supported_in_api !== false;
+}
+
 async function fetchOpenAICodexCatalog(
 	credentials: OpenAICodexCredentials,
 ): Promise<OpenAICodexCatalogModel[] | undefined> {
@@ -395,7 +408,7 @@ export async function hydrateOpenAICodexModels(
 
 	for (const entry of catalog) {
 		const id = entry.slug?.trim();
-		if (!id || entry.visibility === "hide") {
+		if (!id || !shouldHydrateOpenAICodexModel(entry)) {
 			continue;
 		}
 

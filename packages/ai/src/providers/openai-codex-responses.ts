@@ -39,6 +39,8 @@ const JWT_CLAIM_PATH = "https://api.openai.com/auth" as const;
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
 const CODEX_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
+const CODEX_AUTO_REVIEW_FALLBACK_INSTRUCTIONS =
+	"Review the provided code changes like a pragmatic senior engineer. Focus on correctness, regressions, risk, and missing tests. Keep the answer concise and concrete.";
 
 const CODEX_RESPONSE_STATUSES = new Set<CodexResponseStatus>([
 	"completed",
@@ -293,12 +295,14 @@ function buildRequestBody(
 	const messages = convertResponsesMessages(model, context, CODEX_TOOL_CALL_PROVIDERS, {
 		includeSystemPrompt: false,
 	});
+	const instructions =
+		context.systemPrompt?.trim() ||
+		(model.id === "codex-auto-review" ? CODEX_AUTO_REVIEW_FALLBACK_INSTRUCTIONS : undefined);
 
 	const body: RequestBody = {
 		model: model.id,
 		store: false,
 		stream: true,
-		instructions: context.systemPrompt,
 		input: messages,
 		text: { verbosity: options?.textVerbosity || "medium" },
 		include: ["reasoning.encrypted_content"],
@@ -306,6 +310,10 @@ function buildRequestBody(
 		tool_choice: "auto",
 		parallel_tool_calls: true,
 	};
+
+	if (instructions) {
+		body.instructions = instructions;
+	}
 
 	if (options?.temperature !== undefined) {
 		body.temperature = options.temperature;
