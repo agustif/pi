@@ -3277,7 +3277,7 @@ export class InteractiveMode {
 
 		this.session.modelRegistry.refresh();
 		try {
-			return await this.session.modelRegistry.getAvailable();
+			return await this.session.modelRegistry.hydrateAvailableModels();
 		} catch {
 			return [];
 		}
@@ -3324,7 +3324,7 @@ export class InteractiveMode {
 	private async showModelsSelector(): Promise<void> {
 		// Get all available models
 		this.session.modelRegistry.refresh();
-		const allModels = this.session.modelRegistry.getAvailable();
+		const allModels = await this.session.modelRegistry.hydrateAvailableModels();
 
 		if (allModels.length === 0) {
 			this.showStatus("No models available");

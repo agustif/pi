@@ -1205,8 +1205,10 @@ export interface ProviderConfig {
 		refreshToken(credentials: OAuthCredentials): Promise<OAuthCredentials>;
 		/** Convert credentials to API key string for the provider. */
 		getApiKey(credentials: OAuthCredentials): string;
-		/** Optional: modify models for this provider (e.g., update baseUrl based on credentials). */
+		/** Optional: modify models for this provider synchronously (e.g., update baseUrl based on credentials). */
 		modifyModels?(models: Model<Api>[], credentials: OAuthCredentials): Model<Api>[];
+		/** Optional: hydrate models asynchronously (e.g., fetch a per-account catalog). */
+		modifyModelsAsync?(models: Model<Api>[], credentials: OAuthCredentials): Promise<Model<Api>[]>;
 	};
 }
 

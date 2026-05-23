@@ -47,8 +47,11 @@ export interface OAuthProviderInterface {
 	/** Convert credentials to API key string for the provider */
 	getApiKey(credentials: OAuthCredentials): string;
 
-	/** Optional: modify models for this provider (e.g., update baseUrl) */
+	/** Optional: modify models for this provider synchronously (e.g., update baseUrl) */
 	modifyModels?(models: Model<Api>[], credentials: OAuthCredentials): Model<Api>[];
+
+	/** Optional: hydrate models for this provider asynchronously (e.g., fetch a per-account catalog) */
+	modifyModelsAsync?(models: Model<Api>[], credentials: OAuthCredentials): Promise<Model<Api>[]>;
 }
 
 /** @deprecated Use OAuthProviderInterface instead */

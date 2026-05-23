@@ -39,6 +39,7 @@ Use `/logout` to clear credentials. Tokens are stored in `~/.pi/agent/auth.json`
 
 - Requires ChatGPT Plus or Pro subscription
 - Personal use only; for production, use the OpenAI Platform API
+- After `/login`, pi hydrates the visible Codex model catalog from the ChatGPT backend for that account and hides internal entries not meant for the picker
 
 ## API Keys
 

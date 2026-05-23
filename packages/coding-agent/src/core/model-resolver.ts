@@ -210,7 +210,7 @@ export function parseModelPattern(
  * strips colon-suffixes to find a match.
  */
 export async function resolveModelScope(patterns: string[], modelRegistry: ModelRegistry): Promise<ScopedModel[]> {
-	const availableModels = await modelRegistry.getAvailable();
+	const availableModels = await modelRegistry.hydrateAvailableModels();
 	const scopedModels: ScopedModel[] = [];
 
 	for (const pattern of patterns) {
@@ -499,7 +499,7 @@ export async function findInitialModel(options: {
 	}
 
 	// 4. Try first available model with valid API key
-	const availableModels = await modelRegistry.getAvailable();
+	const availableModels = await modelRegistry.hydrateAvailableModels();
 
 	if (availableModels.length > 0) {
 		// Try to find a default model from known providers
@@ -560,7 +560,7 @@ export async function restoreModelFromSession(
 	}
 
 	// Try to find any available model
-	const availableModels = await modelRegistry.getAvailable();
+	const availableModels = await modelRegistry.hydrateAvailableModels();
 
 	if (availableModels.length > 0) {
 		// Try to find a default model from known providers
