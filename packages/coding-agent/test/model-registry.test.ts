@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { Api, Context, Model, OpenAICompletionsCompat } from "@mariozechner/pi-ai";
 import { getApiProvider } from "@mariozechner/pi-ai";
 import { getOAuthProvider } from "@mariozechner/pi-ai/oauth";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import { clearApiKeyCache, ModelRegistry } from "../src/core/model-registry.js";
 
@@ -904,6 +904,60 @@ describe("ModelRegistry", () => {
 					}
 				}
 			});
+		});
+	});
+
+	describe("async OAuth model hydration", () => {
+		test("hydrates openai-codex models from the live account catalog", async () => {
+			const originalFetch = global.fetch;
+			const fetchMock = vi.fn(async () =>
+				new Response(
+					JSON.stringify({
+						models: [
+							{
+								slug: "gpt-5.5",
+								display_name: "GPT-5.5",
+								context_window: 272000,
+								input_modalities: ["text", "image"],
+								supported_reasoning_levels: [{ effort: "low" }, { effort: "xhigh" }],
+								visibility: "list",
+							},
+							{
+								slug: "gpt-5.4-mini",
+								display_name: "GPT-5.4 Mini",
+								context_window: 272000,
+								input_modalities: ["text", "image"],
+								supported_reasoning_levels: [{ effort: "low" }],
+								visibility: "list",
+							},
+						],
+					}),
+					{ status: 200, headers: { "Content-Type": "application/json" } },
+				),
+			);
+			global.fetch = fetchMock as typeof fetch;
+
+			try {
+				authStorage.set("openai-codex", {
+					type: "oauth",
+					access: "access-token",
+					refresh: "refresh-token",
+					expires: Date.now() + 60_000,
+					accountId: "acct_123",
+				});
+
+				const registry = new ModelRegistry(authStorage, modelsJsonPath);
+				const models = await registry.hydrateAvailableModels();
+
+				expect(models.filter((model) => model.provider === "openai-codex").map((model) => model.id)).toEqual([
+					"gpt-5.5",
+					"gpt-5.4-mini",
+				]);
+				expect(registry.find("openai-codex", "gpt-5.5")?.name).toBe("GPT-5.5");
+				expect(fetchMock).toHaveBeenCalledTimes(1);
+			} finally {
+				global.fetch = originalFetch;
+			}
 		});
 	});
 });

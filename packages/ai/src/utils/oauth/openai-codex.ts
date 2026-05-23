@@ -18,6 +18,7 @@ if (typeof process !== "undefined" && (process.versions?.node || process.version
 }
 
 import { generatePKCE } from "./pkce.js";
+import type { Api, Model } from "../../types.js";
 import type { OAuthCredentials, OAuthLoginCallbacks, OAuthPrompt, OAuthProviderInterface } from "./types.js";
 
 const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
@@ -26,6 +27,9 @@ const TOKEN_URL = "https://auth.openai.com/oauth/token";
 const REDIRECT_URI = "http://localhost:1455/auth/callback";
 const SCOPE = "openid profile email offline_access";
 const JWT_CLAIM_PATH = "https://api.openai.com/auth";
+const OPENAI_CODEX_MODELS_CLIENT_VERSION = process.env.PI_OPENAI_CODEX_CLIENT_VERSION || "0.124.0";
+const OPENAI_CODEX_MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
+const OPENAI_CODEX_MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${OPENAI_CODEX_MODELS_CLIENT_VERSION}`;
 
 const SUCCESS_HTML = `<!doctype html>
 <html lang="en">
@@ -49,6 +53,24 @@ type JwtPayload = {
 	};
 	[key: string]: unknown;
 };
+
+type OpenAICodexCredentials = OAuthCredentials & {
+	accountId?: string;
+};
+
+type OpenAICodexCatalogModel = {
+	slug?: string;
+	display_name?: string;
+	context_window?: number;
+	max_context_window?: number;
+	input_modalities?: string[];
+	supported_reasoning_levels?: Array<{ effort?: string }>;
+	supported_in_api?: boolean;
+	visibility?: string;
+};
+
+const FIRST_CLASS_HIDDEN_OPENAI_CODEX_MODELS = new Set(["codex-auto-review"]);
+const openAICodexModelsCache = new Map<string, { expiresAt: number; models: OpenAICodexCatalogModel[] }>();
 
 function createState(): string {
 	if (!_randomBytes) {
@@ -291,6 +313,135 @@ function getAccountId(accessToken: string): string | null {
 	return typeof accountId === "string" && accountId.length > 0 ? accountId : null;
 }
 
+function getCredentialAccountId(credentials: OpenAICodexCredentials): string | null {
+	if (typeof credentials.accountId === "string" && credentials.accountId.length > 0) {
+		return credentials.accountId;
+	}
+	return getAccountId(credentials.access);
+}
+
+function normalizeOpenAICodexInputModalities(
+	modalities: string[] | undefined,
+	fallback: ("text" | "image")[],
+): ("text" | "image")[] {
+	const normalized = new Set<"text" | "image">();
+	for (const modality of modalities ?? []) {
+		if (modality === "text" || modality === "image") {
+			normalized.add(modality);
+		}
+	}
+	return normalized.size > 0 ? Array.from(normalized) : fallback;
+}
+
+function normalizeOpenAICodexReasoning(model: OpenAICodexCatalogModel, fallback: boolean): boolean {
+	if (!Array.isArray(model.supported_reasoning_levels)) {
+		return fallback;
+	}
+	return model.supported_reasoning_levels.some((level) => typeof level?.effort === "string" && level.effort.length > 0);
+}
+
+function shouldHydrateOpenAICodexModel(model: OpenAICodexCatalogModel): boolean {
+	const id = model.slug?.trim();
+	if (!id) {
+		return false;
+	}
+	if (model.visibility !== "hide") {
+		return true;
+	}
+	return FIRST_CLASS_HIDDEN_OPENAI_CODEX_MODELS.has(id) && model.supported_in_api !== false;
+}
+
+async function fetchOpenAICodexCatalog(
+	credentials: OpenAICodexCredentials,
+): Promise<OpenAICodexCatalogModel[] | undefined> {
+	if (process.env.PI_OFFLINE) {
+		return undefined;
+	}
+
+	const accountId = getCredentialAccountId(credentials);
+	if (!credentials.access || !accountId) {
+		return undefined;
+	}
+
+	const now = Date.now();
+	const cached = openAICodexModelsCache.get(accountId);
+	if (cached && cached.expiresAt > now) {
+		return cached.models;
+	}
+
+	const response = await fetch(OPENAI_CODEX_MODELS_URL, {
+		headers: {
+			Authorization: `Bearer ${credentials.access}`,
+			"chatgpt-account-id": accountId,
+			"User-Agent": `pi/${OPENAI_CODEX_MODELS_CLIENT_VERSION}`,
+		},
+	});
+	if (!response.ok) {
+		return undefined;
+	}
+
+	const payload = (await response.json()) as { models?: OpenAICodexCatalogModel[] };
+	if (!Array.isArray(payload.models)) {
+		return undefined;
+	}
+
+	openAICodexModelsCache.set(accountId, {
+		expiresAt: now + OPENAI_CODEX_MODELS_CACHE_TTL_MS,
+		models: payload.models,
+	});
+	return payload.models;
+}
+
+export async function hydrateOpenAICodexModels(
+	models: Model<Api>[],
+	credentials: OAuthCredentials,
+): Promise<Model<Api>[]> {
+	const catalog = await fetchOpenAICodexCatalog(credentials as OpenAICodexCredentials);
+	if (!catalog) {
+		return models;
+	}
+
+	const providerModels = models.filter((model) => model.provider === "openai-codex");
+	const providerTemplate = providerModels[0];
+	const byId = new Map(providerModels.map((model) => [model.id, model]));
+	const hydratedProviderModels: Model<Api>[] = [];
+
+	for (const entry of catalog) {
+		const id = entry.slug?.trim();
+		if (!id || !shouldHydrateOpenAICodexModel(entry)) {
+			continue;
+		}
+
+		const existing = byId.get(id);
+		const fallbackInput = existing?.input ?? providerTemplate?.input ?? ["text"];
+		const fallbackContextWindow = existing?.contextWindow ?? providerTemplate?.contextWindow ?? 272000;
+		const fallbackMaxTokens = existing?.maxTokens ?? providerTemplate?.maxTokens ?? 128000;
+		const fallbackCost = existing?.cost ?? providerTemplate?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
+		hydratedProviderModels.push({
+			id,
+			name: entry.display_name?.trim() || existing?.name || id,
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: existing?.baseUrl ?? providerTemplate?.baseUrl ?? "https://chatgpt.com/backend-api",
+			reasoning: normalizeOpenAICodexReasoning(entry, existing?.reasoning ?? providerTemplate?.reasoning ?? true),
+			input: normalizeOpenAICodexInputModalities(entry.input_modalities, fallbackInput),
+			cost: fallbackCost,
+			contextWindow: entry.context_window ?? entry.max_context_window ?? fallbackContextWindow,
+			maxTokens: fallbackMaxTokens,
+			headers: existing?.headers ?? providerTemplate?.headers,
+			compat: existing?.compat ?? providerTemplate?.compat,
+		} satisfies Model<Api>);
+	}
+
+	if (hydratedProviderModels.length === 0) {
+		return models;
+	}
+
+	const otherModels = models.filter((model) => model.provider !== "openai-codex");
+	return [...otherModels, ...hydratedProviderModels];
+}
+
 /**
  * Login with OpenAI Codex OAuth
  *
@@ -451,5 +602,9 @@ export const openaiCodexOAuthProvider: OAuthProviderInterface = {
 
 	getApiKey(credentials: OAuthCredentials): string {
 		return credentials.access;
+	},
+
+	async modifyModelsAsync(models: Model<Api>[], credentials: OAuthCredentials): Promise<Model<Api>[]> {
+		return hydrateOpenAICodexModels(models, credentials);
 	},
 };

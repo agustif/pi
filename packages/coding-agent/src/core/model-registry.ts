@@ -221,9 +221,11 @@ export const clearApiKeyCache = clearConfigValueCache;
  */
 export class ModelRegistry {
 	private models: Model<Api>[] = [];
+	private baseModels: Model<Api>[] = [];
 	private customProviderApiKeys: Map<string, string> = new Map();
 	private registeredProviders: Map<string, ProviderConfigInput> = new Map();
 	private loadError: string | undefined = undefined;
+	private hydrationPromise: Promise<Model<Api>[]> | undefined = undefined;
 
 	constructor(
 		readonly authStorage: AuthStorage,
@@ -248,6 +250,7 @@ export class ModelRegistry {
 	refresh(): void {
 		this.customProviderApiKeys.clear();
 		this.loadError = undefined;
+		this.hydrationPromise = undefined;
 
 		// Ensure dynamic API/OAuth registrations are rebuilt from current provider state.
 		resetApiProviders();
@@ -292,6 +295,7 @@ export class ModelRegistry {
 			}
 		}
 
+		this.baseModels = combined;
 		this.models = combined;
 	}
 
@@ -498,6 +502,49 @@ export class ModelRegistry {
 	 */
 	getAll(): Model<Api>[] {
 		return this.models;
+	}
+
+	/**
+	 * Hydrate provider model lists that depend on async account-scoped discovery.
+	 * Falls back to the current cached model list if hydration fails.
+	 */
+	async hydrateAvailableModels(): Promise<Model<Api>[]> {
+		if (this.hydrationPromise) {
+			return this.hydrationPromise;
+		}
+
+		this.hydrationPromise = (async () => {
+			let hydrated = this.baseModels;
+
+			for (const oauthProvider of this.authStorage.getOAuthProviders()) {
+				if (!oauthProvider.modifyModelsAsync) continue;
+
+				const providerId = oauthProvider.id;
+				const credential = this.authStorage.get(providerId);
+				if (credential?.type !== "oauth") continue;
+
+				try {
+					const apiKey = await this.authStorage.getApiKey(providerId);
+					if (!apiKey) continue;
+
+					const refreshedCredential = this.authStorage.get(providerId);
+					if (refreshedCredential?.type !== "oauth") continue;
+
+					hydrated = await oauthProvider.modifyModelsAsync(hydrated, refreshedCredential);
+				} catch {
+					// Ignore hydration failures and keep the cached/static model list.
+				}
+			}
+
+			this.models = hydrated;
+			return this.getAvailable();
+		})();
+
+		try {
+			return await this.hydrationPromise;
+		} finally {
+			this.hydrationPromise = undefined;
+		}
 	}
 
 	/**

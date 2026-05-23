@@ -1391,7 +1391,7 @@ export class AgentSession {
 	}
 
 	private async _cycleAvailableModel(direction: "forward" | "backward"): Promise<ModelCycleResult | undefined> {
-		const availableModels = await this._modelRegistry.getAvailable();
+		const availableModels = await this._modelRegistry.hydrateAvailableModels();
 		if (availableModels.length <= 1) return undefined;
 
 		const currentModel = this.model;
@@ -2546,7 +2546,7 @@ export class AgentSession {
 		// Restore model if saved
 		if (sessionContext.model) {
 			const previousModel = this.model;
-			const availableModels = await this._modelRegistry.getAvailable();
+			const availableModels = await this._modelRegistry.hydrateAvailableModels();
 			const match = availableModels.find(
 				(m) => m.provider === sessionContext.model!.provider && m.id === sessionContext.model!.modelId,
 			);

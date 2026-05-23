@@ -706,6 +706,8 @@ export async function main(args: string[]) {
 		await showDeprecationWarnings(deprecationWarnings);
 	}
 
+	await modelRegistry.hydrateAvailableModels();
+
 	let scopedModels: ScopedModel[] = [];
 	const modelPatterns = parsed.models ?? settingsManager.getEnabledModels();
 	if (modelPatterns && modelPatterns.length > 0) {

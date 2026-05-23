@@ -187,6 +187,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const hasExistingSession = existingSession.messages.length > 0;
 	const hasThinkingEntry = sessionManager.getBranch().some((entry) => entry.type === "thinking_level_change");
 
+	await modelRegistry.hydrateAvailableModels();
+
 	let model = options.model;
 	let modelFallbackMessage: string | undefined;
 

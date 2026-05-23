@@ -535,6 +535,7 @@ interface ProviderConfig {
     refreshToken(credentials: OAuthCredentials): Promise<OAuthCredentials>;
     getApiKey(credentials: OAuthCredentials): string;
     modifyModels?(models: Model<Api>[], credentials: OAuthCredentials): Model<Api>[];
+    modifyModelsAsync?(models: Model<Api>[], credentials: OAuthCredentials): Promise<Model<Api>[]>;
   };
 }
 ```
